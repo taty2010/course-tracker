@@ -24,10 +24,19 @@ response = notion.databases.query(
 
 data = []
 for item in response['results']:
-  test = str(item['properties']['Watching']['checkbox']).lower()
+  # test = str(item['properties']['Watching']['checkbox']).lower()
+  prop = item['properties']
+  if prop["Time Remaining"]["rich_text"] != []:
+    time_remaining = prop["Time Remaining"]["rich_text"][0]["plain_text"]
+  else:
+    time_remaining = ""
   processed_data = {
-    "name": item['properties']['Name']['title'][0]['plain_text'],
-    "watching": test
+    "name": prop['Name']['title'][0]['plain_text'],
+    "watching": prop['Watching']['checkbox'],
+    "Lessons Completed": prop["Lessons Completed"]["number"],
+    "Lessons Remaining": prop["Lessons Remaining"]["number"],
+    "Time Remaining": time_remaining,
+    'id': item["id"]
   }
   data.append(processed_data)
 
@@ -82,13 +91,44 @@ async def create_page(d):
     }
   )
 
+async def update_page(id, completed, remaining, time):
+  await notionAsync.pages.update(
+    **{
+      "page_id": id,
+      "properties": {
+        "Lessons Completed":{ "number": int(completed)},
+        "Lessons Remaining": { "number": int(remaining)},
+        "Time Remaining": { 
+          "rich_text": [
+            {
+              "text": {
+                "content": time
+              }
+            }
+          ]
+        }
+      }
+    }
+  )
+
 curr_name = {course['name'] for course in data}
 new_name = {course['name'] for course in fem_courseList}
 res = curr_name.intersection(new_name)
+
+lessons_curr = {}
+lessons_new = {}
+for course in data:
+  lessons_curr.update({course["name"]: {"completed": course["Lessons Completed"], "id": course["id"]}})
+
+for course in fem_courseList:
+  lessons_new.update({course["name"]: int(course["Lessons Completed"])})
 
 async def check_course():
   for fem in fem_courseList:
     if fem['name'] not in res:
       await create_page(fem)
+    if lessons_new[fem['name']] != lessons_curr[fem['name']]["completed"]:
+      await update_page(lessons_curr[fem['name']]["id"],fem["Lessons Completed"], fem["Lessons Remaining"], fem["Time Remaining"])
+  
 
 asyncio.run(check_course())
